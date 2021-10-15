@@ -1,65 +1,97 @@
 package bucket
 
 import (
+	"context"
 	"log"
-	"sort"
 
-	"github.com/wojtyniak/xde/xfiles"
+	fc "github.com/wojtyniak/xde/filechunker"
+	"github.com/wojtyniak/xde/sorter"
 )
 
-type Sizer interface {
-	Size() int64
-}
-
 type Bucket struct {
-	Files []*xfiles.File
+	chunkers []*fc.FileChunker
+	done     bool
 }
 
-func NewBucket(files []*xfiles.File) *Bucket {
-	return &Bucket{files}
-}
-
-func bucketBySize(sizers []Sizer) [][]Sizer {
-	sort.Slice(sizers, func(i int, j int) bool {
-		return sizers[i].Size() < sizers[j].Size()
-	})
-	sizeToSizers := make(map[int64][]Sizer)
-	for _, f := range sizers {
-		if sizeToSizers[f.Size()] != nil {
-			sizeToSizers[f.Size()] = append(sizeToSizers[f.Size()], f)
+func NewBucket(ctx context.Context, paths []string) *Bucket {
+	b := new(Bucket)
+	b.chunkers = make([]*fc.FileChunker, len(paths))
+	errs := 0
+	for i, path := range paths {
+		chunker, err := fc.NewFileChunker(ctx, path)
+		if err != nil {
+			log.Printf("Cannot create a chunker for file %s: %s", path, err)
+			errs++
 			continue
 		}
-		sizeToSizers[f.Size()] = []Sizer{f}
+		b.chunkers[i] = chunker
 	}
-	bucketedSizers := make([][]Sizer, 0, 1)
-	for _, sizers := range sizeToSizers {
-		if len(sizers) <= 1 {
-			continue
-		}
-		bucketedSizers = append(bucketedSizers, sizers)
-	}
-	return bucketedSizers
+	b.chunkers = b.chunkers[:len(b.chunkers)-errs]
+	return b
 }
 
-func BucketFilesBySize(files []*xfiles.File) []*Bucket {
-	sizers := make([]Sizer, 0, len(files))
-	for _, file := range files {
-		sizers = append(sizers, file)
+func (b *Bucket) Close() {
+	b.done = true
+	for _, c := range b.chunkers {
+		c.Close()
 	}
-	bucketedSizers := bucketBySize(sizers)
-	buckets := make([]*Bucket, 0, len(bucketedSizers))
+}
 
-	for _, bucket := range bucketedSizers {
-		fileBucket := make([]*xfiles.File, 0, len(bucket))
-		for i := range bucket {
-			f := bucket[i].(*xfiles.File)
-			if !f.IsReadable() {
-				log.Printf("File: %s is unreadable", f.Path())
-				continue
-			}
-			fileBucket = append(fileBucket, f)
+func (b *Bucket) Done() bool {
+	return b.done
+}
+
+func (b *Bucket) getNextChunks() [][]byte {
+	chunks := make([][]byte, len(b.chunkers))
+	for i, c := range b.chunkers {
+		chunks[i] = c.NextChunk()
+		if chunks[i] == nil {
+			return nil
 		}
-		buckets = append(buckets, NewBucket(fileBucket))
+	}
+	return chunks
+}
+
+func (b *Bucket) subBucket(chunkerIDs []int) *Bucket {
+	nb := new(Bucket)
+	nb.chunkers = make([]*fc.FileChunker, len(chunkerIDs))
+	for i, c := range chunkerIDs {
+		nb.chunkers[i] = b.chunkers[c]
+	}
+	return nb
+}
+
+func (b *Bucket) splitByChunks(sorted [][]int) []*Bucket {
+	buckets := make([]*Bucket, 0, len(sorted))
+	for i, s := range sorted {
+		if len(s) == 0 {
+			// File went into a different bucket
+			continue
+		}
+		if len(s) == 1 {
+			// Only one file in the bucket so it's unique
+			b.chunkers[sorted[i][0]].Close()
+			continue
+		}
+		buckets = append(buckets, b.subBucket(sorted[i]))
 	}
 	return buckets
+}
+
+func (b *Bucket) Sort() []*Bucket {
+	chunks := b.getNextChunks()
+	if chunks == nil {
+		b.Close()
+		return []*Bucket{b}
+	}
+	sortedChunks := sorter.SortChunks(chunks)
+	return b.splitByChunks(sortedChunks)
+}
+
+func (b *Bucket) Paths() []string {
+	ss := make([]string, len(b.chunkers))
+	for i, c := range b.chunkers {
+		ss[i] = c.Path()
+	}
+	return ss
 }
