@@ -7,11 +7,13 @@ import (
 )
 
 type FileChunker struct {
-	path      string
-	ctx       context.Context
-	cancel    context.CancelFunc
-	chunkChan chan []byte
-	chunkSize int
+	path        string
+	ctx         context.Context
+	cancel      context.CancelFunc
+	chunkChan   chan []byte
+	chunkSize   int
+	filesBarAdd func(num int) error
+	bytesBarAdd func(num int) error
 }
 
 func NewFileChunker(ctx context.Context, path string) (*FileChunker, error) {
@@ -20,6 +22,14 @@ func NewFileChunker(ctx context.Context, path string) (*FileChunker, error) {
 	fc.ctx, fc.cancel = context.WithCancel(ctx)
 	chunkChan := make(chan []byte, 1)
 	fc.chunkSize = ctx.Value("CHUNK_SIZE").(int)
+	fab := ctx.Value("filesBarAdd")
+	if fab != nil {
+		fc.filesBarAdd = fab.(func(num int) error)
+	}
+	bba := ctx.Value("bytesBarAdd")
+	if bba != nil {
+		fc.bytesBarAdd = bba.(func(num int) error)
+	}
 	err := fc.startChunkReader(chunkChan)
 	if err != nil {
 		return nil, err
@@ -44,11 +54,18 @@ func (fc *FileChunker) startChunkReader(out chan<- []byte) error {
 	}
 
 	go func() {
+		if fc.filesBarAdd != nil {
+			defer fc.filesBarAdd(1)
+		}
 		defer close(out)
 		defer fc.Close()
+
 		for {
 			b := make([]byte, fc.chunkSize)
 			n, err := f.Read(b)
+			if fc.bytesBarAdd != nil {
+				go fc.bytesBarAdd(n)
+			}
 			if err != nil && err.Error() != "EOF" {
 				log.Printf("Error while reading file %s: %s", fc.path, err)
 				return
