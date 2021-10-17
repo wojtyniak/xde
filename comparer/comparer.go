@@ -1,6 +1,7 @@
 package comparer
 
 import (
+	"bufio"
 	"context"
 	"sync"
 
@@ -78,8 +79,18 @@ func startWorkers(ctx context.Context, n int) (in chan *bucket.Bucket, out chan 
 
 func startFeeder(ctx context.Context, pathBuckets [][]string, in chan<- *bucket.Bucket) {
 	defer close(in)
+	bufferSize := ctx.Value("BUFFER_SIZE").(int)
+	chunkSize := ctx.Value("CHUNK_SIZE").(int)
+	bufferPool := &sync.Pool{New: func() interface{} {
+		b := bufio.NewReaderSize(nil, bufferSize)
+		return b
+	}}
+	chunkPool := &sync.Pool{New: func() interface{} {
+		b := make([]byte, chunkSize)
+		return b
+	}}
 	for _, pathBucket := range pathBuckets {
-		bucket := bucket.NewBucket(ctx, pathBucket)
+		bucket := bucket.NewBucket(ctx, pathBucket, bufferPool, chunkPool)
 		select {
 		case in <- bucket:
 		case <-ctx.Done():

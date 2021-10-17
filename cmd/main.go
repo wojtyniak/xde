@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	CHUNK_SIZE int = 131072 //4096
+	CHUNK_SIZE  int = 4096
+	BUFFER_SIZE int = 131072
 )
 
 var (
@@ -31,15 +32,19 @@ func main() {
 	// Start comparison
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, "CHUNK_SIZE", CHUNK_SIZE)
+	ctx = context.WithValue(ctx, "BUFFER_SIZE", BUFFER_SIZE)
 	ctx = context.WithValue(ctx, "J", J)
 	ctx = context.WithValue(ctx, "filesBarAdd", filesBar.Add)
 	ctx = context.WithValue(ctx, "bytesBarAdd", bytesBar.Add)
 	duplicates := comparer.FindDuplicates(ctx, pathBuckets)
 
-	for _, dups := range duplicates {
-		fmt.Println()
+	for i, dups := range duplicates {
 		for _, d := range dups {
 			fmt.Println(d)
 		}
+		if i < len(duplicates)-1 {
+			fmt.Println()
+		}
 	}
+	fmt.Println(len(duplicates))
 }

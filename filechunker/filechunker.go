@@ -1,9 +1,11 @@
 package filechunker
 
 import (
+	"bufio"
 	"context"
 	"log"
 	"os"
+	"sync"
 )
 
 type FileChunker struct {
@@ -12,12 +14,16 @@ type FileChunker struct {
 	cancel      context.CancelFunc
 	chunkChan   chan []byte
 	chunkSize   int
+	bufferPool  *sync.Pool
+	chunkPool   *sync.Pool
 	filesBarAdd func(num int) error
 	bytesBarAdd func(num int) error
 }
 
-func NewFileChunker(ctx context.Context, path string) (*FileChunker, error) {
+func NewFileChunker(ctx context.Context, path string, bufferPool, chunkPool *sync.Pool) (*FileChunker, error) {
 	fc := new(FileChunker)
+	fc.bufferPool = bufferPool
+	fc.chunkPool = chunkPool
 	fc.path = path
 	fc.ctx, fc.cancel = context.WithCancel(ctx)
 	chunkChan := make(chan []byte, 1)
@@ -47,8 +53,16 @@ func (fc *FileChunker) Close() {
 	fc.cancel()
 }
 
+func clearChunk(chunk []byte) {
+	for i := 0; i < cap(chunk); i++ {
+		chunk[i] = 0
+	}
+}
+
 func (fc *FileChunker) startChunkReader(out chan<- []byte) error {
 	f, err := os.Open(fc.path)
+	br := fc.bufferPool.Get().(*bufio.Reader)
+	br.Reset(f)
 	if err != nil {
 		return err
 	}
@@ -57,12 +71,15 @@ func (fc *FileChunker) startChunkReader(out chan<- []byte) error {
 		if fc.filesBarAdd != nil {
 			defer fc.filesBarAdd(1)
 		}
+		defer fc.bufferPool.Put(br)
 		defer close(out)
-		defer fc.Close()
+		defer f.Close()
 
 		for {
-			b := make([]byte, fc.chunkSize)
-			n, err := f.Read(b)
+			// b := make([]byte, fc.chunkSize)
+			b := (fc.chunkPool.Get().([]byte))
+			clearChunk(b)
+			n, err := br.Read(b)
 			if fc.bytesBarAdd != nil {
 				go fc.bytesBarAdd(n)
 			}

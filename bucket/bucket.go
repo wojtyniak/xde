@@ -3,22 +3,27 @@ package bucket
 import (
 	"context"
 	"log"
+	"sync"
 
 	fc "github.com/wojtyniak/xde/filechunker"
 	"github.com/wojtyniak/xde/sorter"
 )
 
 type Bucket struct {
-	chunkers []*fc.FileChunker
-	done     bool
+	chunkers   []*fc.FileChunker
+	done       bool
+	bufferPool *sync.Pool
+	chunkPool  *sync.Pool
 }
 
-func NewBucket(ctx context.Context, paths []string) *Bucket {
+func NewBucket(ctx context.Context, paths []string, bufferPool, chunkPool *sync.Pool) *Bucket {
 	b := new(Bucket)
+	b.bufferPool = bufferPool
+	b.chunkPool = chunkPool
 	b.chunkers = make([]*fc.FileChunker, len(paths))
 	errs := 0
 	for i, path := range paths {
-		chunker, err := fc.NewFileChunker(ctx, path)
+		chunker, err := fc.NewFileChunker(ctx, path, bufferPool, chunkPool)
 		if err != nil {
 			log.Printf("Cannot create a chunker for file %s: %s", path, err)
 			errs++
@@ -55,6 +60,8 @@ func (b *Bucket) getNextChunks() [][]byte {
 func (b *Bucket) subBucket(chunkerIDs []int) *Bucket {
 	nb := new(Bucket)
 	nb.chunkers = make([]*fc.FileChunker, len(chunkerIDs))
+	nb.bufferPool = b.bufferPool
+	nb.chunkPool = b.chunkPool
 	for i, c := range chunkerIDs {
 		nb.chunkers[i] = b.chunkers[c]
 	}
@@ -85,6 +92,7 @@ func (b *Bucket) Sort() []*Bucket {
 		return []*Bucket{b}
 	}
 	sortedChunks := sorter.SortChunks(chunks)
+	defer b.returnBytes(chunks)
 	return b.splitByChunks(sortedChunks)
 }
 
@@ -94,4 +102,10 @@ func (b *Bucket) Paths() []string {
 		ss[i] = c.Path()
 	}
 	return ss
+}
+
+func (b *Bucket) returnBytes(chunks [][]byte) {
+	for _, c := range chunks {
+		b.chunkPool.Put(c)
+	}
 }
