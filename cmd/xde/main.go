@@ -4,23 +4,43 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/schollz/progressbar/v3"
 	"github.com/wojtyniak/xde/comparer"
 )
 
-const (
-	CHUNK_SIZE  int = 4096
-	BUFFER_SIZE int = 131072
-)
+const ()
 
 var (
-	J int = 2
+	j          int
+	chunkSize  int
+	bufferSize int
 )
+
+func init() {
+	const (
+		defaultJ          = 2
+		defaultChunkSize  = 4096
+		defaultBufferSize = 131072
+	)
+	flag.IntVar(&j, "j", defaultJ, "Number of concurrent jobs running in parallel. Low values are ok since the program is I/O bound.")
+	flag.IntVar(&chunkSize, "chunk-size", defaultChunkSize, "Length of the data being compared at once in bytes")
+	flag.IntVar(&bufferSize, "buffer-size", defaultBufferSize, "Buffer size for the data read from disk in bytes")
+
+	flag.Usage = func() {
+		fmt.Printf("Usage: xde [options] [directory1] [directory2]\n\nOptions:\n")
+		flag.PrintDefaults()
+	}
+}
 
 func main() {
 	flag.Parse()
 	dirnames := flag.Args()
+	if len(dirnames) == 0 {
+		flag.Usage()
+		os.Exit(0)
+	}
 	n, pathBuckets := findPossibleDuplicates(dirnames)
 
 	// Progress bars
@@ -31,11 +51,11 @@ func main() {
 
 	// Start comparison
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, "CHUNK_SIZE", CHUNK_SIZE)
-	ctx = context.WithValue(ctx, "BUFFER_SIZE", BUFFER_SIZE)
+	ctx = context.WithValue(ctx, "CHUNK_SIZE", chunkSize)
+	ctx = context.WithValue(ctx, "BUFFER_SIZE", bufferSize)
 	ctx = context.WithValue(ctx, "filesBarAdd", filesBar.Add)
 	ctx = context.WithValue(ctx, "bytesBarAdd", bytesBar.Add)
-	duplicates := comparer.FindDuplicates(ctx, pathBuckets, J)
+	duplicates := comparer.FindDuplicates(ctx, pathBuckets, j)
 
 	for i, dups := range duplicates {
 		for _, d := range dups {
