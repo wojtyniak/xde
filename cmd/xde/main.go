@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
 	"github.com/schollz/progressbar/v3"
 	"github.com/wojtyniak/xde/comparer"
@@ -20,6 +21,7 @@ var (
 	chunkSize  int
 	bufferSize int
 	writeOut   string
+	quiet      bool
 )
 
 func init() {
@@ -32,6 +34,7 @@ func init() {
 	flag.IntVar(&chunkSize, "chunk-size", defaultChunkSize, "Length of the data being compared at once in bytes")
 	flag.IntVar(&bufferSize, "buffer-size", defaultBufferSize, "Buffer size for the data read from disk in bytes")
 	flag.StringVar(&writeOut, "w", "", "Write output to the specified file (the file is going to be truncated)")
+	flag.BoolVar(&quiet, "q", false, "Don't print stats to stderr and don't show the progress bar")
 
 	flag.Usage = func() {
 		fmt.Printf("Usage: xde [options] [directory1] [directory2]\n\nOptions:\n")
@@ -75,28 +78,40 @@ func main() {
 		out = os.Stdout
 	}
 
+	startTime := time.Now()
 	n, pathBuckets := findPossibleDuplicates(dirnames)
+	if !quiet {
+		fmt.Fprintf(os.Stdout, "Found %d possibly duplicated files in %d buckets\n", n, len(pathBuckets))
+	}
 
 	// Progress bars
 	// Yes, I know they're not supposed to be used like that but it works
 	// well-enough
-	filesBar := progressbar.NewOptions(n, progressbar.OptionClearOnFinish())
 
 	// Start comparison
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, "CHUNK_SIZE", chunkSize)
 	ctx = context.WithValue(ctx, "BUFFER_SIZE", bufferSize)
-	ctx = context.WithValue(ctx, "filesBarAdd", filesBar.Add)
-	duplicates := comparer.FindDuplicates(ctx, pathBuckets, j)
+	if !quiet {
+		filesBar := progressbar.NewOptions(n, progressbar.OptionClearOnFinish())
+		ctx = context.WithValue(ctx, "filesBarAdd", filesBar.Add)
+	}
 
+	duplicates := comparer.FindDuplicates(ctx, pathBuckets, j)
+	endTime := time.Now()
+
+	n = 0
 	for i, dups := range duplicates {
+		n += len(dups)
 		for _, d := range dups {
 			fmt.Fprintln(out, d)
 
 		}
 		if i < len(duplicates)-1 {
-			fmt.Fprintln(out)
+			fmt.Fprintln(out) // Separate entries
 		}
 	}
-	fmt.Fprintln(out, len(duplicates))
+	if !quiet {
+		fmt.Fprintf(os.Stderr, "Found %d duplicated files in %d buckets in %s \n", n, len(duplicates), endTime.Sub(startTime))
+	}
 }
