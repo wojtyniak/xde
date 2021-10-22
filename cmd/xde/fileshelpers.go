@@ -48,7 +48,7 @@ func scanDirectory(sizeToPath map[int64][]string, dir string) {
 
 }
 
-func findPossibleDuplicates(dirs []string) (n int64, paths [][]string) {
+func findPossibleDuplicates(dirs []string) (n int, paths [][]string) {
 	sizeToPath := make(map[int64][]string)
 	for _, dir := range dirs {
 		scanDirectory(sizeToPath, dir)
@@ -58,7 +58,7 @@ func findPossibleDuplicates(dirs []string) (n int64, paths [][]string) {
 	for key := range sizeToPath {
 		if len(sizeToPath[key]) > 1 {
 			paths = append(paths, sizeToPath[key])
-			n += int64(len(sizeToPath[key]))
+			n += len(sizeToPath[key])
 		}
 	}
 	return n, paths

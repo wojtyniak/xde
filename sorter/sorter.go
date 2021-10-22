@@ -36,11 +36,6 @@ func sortHash(chunks [][]byte) [][]int {
 	return sort(hc)
 }
 
-func sortBytes(chunks [][]byte) [][]int {
-	bc := &ByteComparable{chunks}
-	return sort(bc)
-}
-
 func sort(c Comparable) [][]int {
 	matches := make([]int, c.Len())
 	for i := range matches {

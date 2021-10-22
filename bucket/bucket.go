@@ -11,27 +11,25 @@ import (
 
 type Bucket struct {
 	chunkers   []*fc.FileChunker
-	done       bool
 	bufferPool *sync.Pool
 	chunkPool  *sync.Pool
+	done       bool
 }
 
 func NewBucket(ctx context.Context, paths []string, bufferPool, chunkPool *sync.Pool) *Bucket {
 	b := new(Bucket)
 	b.bufferPool = bufferPool
 	b.chunkPool = chunkPool
-	b.chunkers = make([]*fc.FileChunker, len(paths))
-	errs := 0
-	for i, path := range paths {
+	b.chunkers = make([]*fc.FileChunker, 0, len(paths))
+
+	for _, path := range paths {
 		chunker, err := fc.NewFileChunker(ctx, path, bufferPool, chunkPool)
 		if err != nil {
 			log.Printf("Cannot create a chunker for file %s: %s", path, err)
-			errs++
 			continue
 		}
-		b.chunkers[i] = chunker
+		b.chunkers = append(b.chunkers, chunker)
 	}
-	b.chunkers = b.chunkers[:len(b.chunkers)-errs]
 	return b
 }
 
@@ -62,6 +60,7 @@ func (b *Bucket) subBucket(chunkerIDs []int) *Bucket {
 	nb.chunkers = make([]*fc.FileChunker, len(chunkerIDs))
 	nb.bufferPool = b.bufferPool
 	nb.chunkPool = b.chunkPool
+
 	for i, c := range chunkerIDs {
 		nb.chunkers[i] = b.chunkers[c]
 	}
@@ -76,7 +75,7 @@ func (b *Bucket) splitByChunks(sorted [][]int) []*Bucket {
 			continue
 		}
 		if len(s) == 1 {
-			// Only one file in the bucket so it's unique
+			// Only one file in the bucket so it's unique by definition
 			b.chunkers[sorted[i][0]].Close()
 			continue
 		}
@@ -91,6 +90,7 @@ func (b *Bucket) Sort() []*Bucket {
 		b.Close()
 		return []*Bucket{b}
 	}
+
 	sortedChunks := sorter.SortChunks(chunks)
 	defer b.returnBytes(chunks)
 	return b.splitByChunks(sortedChunks)

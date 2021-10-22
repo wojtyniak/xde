@@ -3,17 +3,17 @@ package filechunker
 import (
 	"bufio"
 	"context"
+	"io"
 	"log"
 	"os"
 	"sync"
 )
 
 type FileChunker struct {
-	path        string
 	ctx         context.Context
 	cancel      context.CancelFunc
+	path        string
 	chunkChan   chan []byte
-	chunkSize   int
 	bufferPool  *sync.Pool
 	chunkPool   *sync.Pool
 	filesBarAdd func(num int) error
@@ -26,8 +26,8 @@ func NewFileChunker(ctx context.Context, path string, bufferPool, chunkPool *syn
 	fc.chunkPool = chunkPool
 	fc.path = path
 	fc.ctx, fc.cancel = context.WithCancel(ctx)
-	chunkChan := make(chan []byte, 1)
-	fc.chunkSize = ctx.Value("CHUNK_SIZE").(int)
+	fc.chunkChan = make(chan []byte, 1)
+
 	fab := ctx.Value("filesBarAdd")
 	if fab != nil {
 		fc.filesBarAdd = fab.(func(num int) error)
@@ -36,11 +36,11 @@ func NewFileChunker(ctx context.Context, path string, bufferPool, chunkPool *syn
 	if bba != nil {
 		fc.bytesBarAdd = bba.(func(num int) error)
 	}
-	err := fc.startChunkReader(chunkChan)
+
+	err := fc.startChunkReader(fc.chunkChan)
 	if err != nil {
 		return nil, err
 	}
-	fc.chunkChan = chunkChan
 
 	return fc, nil
 }
@@ -54,7 +54,7 @@ func (fc *FileChunker) Close() {
 }
 
 func clearChunk(chunk []byte) {
-	for i := 0; i < cap(chunk); i++ {
+	for i := 0; i < len(chunk); i++ {
 		chunk[i] = 0
 	}
 }
@@ -72,18 +72,17 @@ func (fc *FileChunker) startChunkReader(out chan<- []byte) error {
 			defer fc.filesBarAdd(1)
 		}
 		defer fc.bufferPool.Put(br)
-		defer close(out)
 		defer f.Close()
+		defer close(out)
 
 		for {
-			// b := make([]byte, fc.chunkSize)
 			b := (fc.chunkPool.Get().([]byte))
 			clearChunk(b)
 			n, err := br.Read(b)
 			if fc.bytesBarAdd != nil {
 				go fc.bytesBarAdd(n)
 			}
-			if err != nil && err.Error() != "EOF" {
+			if err != nil && err != io.EOF {
 				log.Printf("Error while reading file %s: %s", fc.path, err)
 				return
 			}
@@ -91,6 +90,7 @@ func (fc *FileChunker) startChunkReader(out chan<- []byte) error {
 				// Reached EOF
 				return
 			}
+
 			select {
 			case out <- b:
 			case <-fc.ctx.Done():
@@ -98,7 +98,6 @@ func (fc *FileChunker) startChunkReader(out chan<- []byte) error {
 			}
 		}
 	}()
-
 	return nil
 }
 

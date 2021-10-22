@@ -15,7 +15,7 @@ const (
 )
 
 var (
-	J int = 2 //runtime.NumCPU() / 2
+	J int = 2
 )
 
 func main() {
@@ -33,10 +33,9 @@ func main() {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, "CHUNK_SIZE", CHUNK_SIZE)
 	ctx = context.WithValue(ctx, "BUFFER_SIZE", BUFFER_SIZE)
-	ctx = context.WithValue(ctx, "J", J)
 	ctx = context.WithValue(ctx, "filesBarAdd", filesBar.Add)
 	ctx = context.WithValue(ctx, "bytesBarAdd", bytesBar.Add)
-	duplicates := comparer.FindDuplicates(ctx, pathBuckets)
+	duplicates := comparer.FindDuplicates(ctx, pathBuckets, J)
 
 	for i, dups := range duplicates {
 		for _, d := range dups {

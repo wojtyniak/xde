@@ -99,9 +99,7 @@ func startFeeder(ctx context.Context, pathBuckets [][]string, in chan<- *bucket.
 	}
 }
 
-func FindDuplicates(ctx context.Context, pathBuckets [][]string) [][]string {
-	j := ctx.Value("J").(int)
-	// chunk_size := ctx.Value("CHUNK_SIZE").(int)
+func FindDuplicates(ctx context.Context, pathBuckets [][]string, j int) [][]string {
 	in, out := startWorkers(ctx, j)
 	go startFeeder(ctx, pathBuckets, in)
 
