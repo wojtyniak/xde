@@ -80,15 +80,13 @@ func main() {
 	// Progress bars
 	// Yes, I know they're not supposed to be used like that but it works
 	// well-enough
-	filesBar := progressbar.Default(n)
-	bytesBar := progressbar.DefaultBytes(-1, "Bytes scanned")
+	filesBar := progressbar.NewOptions(n, progressbar.OptionClearOnFinish())
 
 	// Start comparison
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, "CHUNK_SIZE", chunkSize)
 	ctx = context.WithValue(ctx, "BUFFER_SIZE", bufferSize)
 	ctx = context.WithValue(ctx, "filesBarAdd", filesBar.Add)
-	ctx = context.WithValue(ctx, "bytesBarAdd", bytesBar.Add)
 	duplicates := comparer.FindDuplicates(ctx, pathBuckets, j)
 
 	for i, dups := range duplicates {

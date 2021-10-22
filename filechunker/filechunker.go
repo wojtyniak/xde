@@ -17,7 +17,6 @@ type FileChunker struct {
 	bufferPool  *sync.Pool
 	chunkPool   *sync.Pool
 	filesBarAdd func(num int) error
-	bytesBarAdd func(num int) error
 }
 
 func NewFileChunker(ctx context.Context, path string, bufferPool, chunkPool *sync.Pool) (*FileChunker, error) {
@@ -31,10 +30,6 @@ func NewFileChunker(ctx context.Context, path string, bufferPool, chunkPool *syn
 	fab := ctx.Value("filesBarAdd")
 	if fab != nil {
 		fc.filesBarAdd = fab.(func(num int) error)
-	}
-	bba := ctx.Value("bytesBarAdd")
-	if bba != nil {
-		fc.bytesBarAdd = bba.(func(num int) error)
 	}
 
 	err := fc.startChunkReader(fc.chunkChan)
@@ -79,9 +74,6 @@ func (fc *FileChunker) startChunkReader(out chan<- []byte) error {
 			b := (fc.chunkPool.Get().([]byte))
 			clearChunk(b)
 			n, err := br.Read(b)
-			if fc.bytesBarAdd != nil {
-				go fc.bytesBarAdd(n)
-			}
 			if err != nil && err != io.EOF {
 				log.Printf("Error while reading file %s: %s", fc.path, err)
 				return
